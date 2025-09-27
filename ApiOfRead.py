@@ -1,4 +1,3 @@
-```python
 # -*- coding: UTF-8 -*-
 import os
 import requests as req
@@ -163,4 +162,4 @@ for r in range(1, config['rounds']+1):
             print("原版顺序,共十个api,自己数")
             apilist = [5,9,8,1,20,24,23,6,21,22]
         runapi(apilist, a)
-```
+
