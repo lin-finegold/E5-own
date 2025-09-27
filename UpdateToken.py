@@ -2,7 +2,7 @@
 import requests as req #导入requests库，用于发起HTTP请求
 import json   # 导入json库，用于处理JSON数据
 import os # 导入os库，用于获取环境变量
-from base64 import b64encode  # 导入b64encode函数，用于Base64编码
+from base64 import b64encode  # 导入b64encode函数，用于Base64编码1
 from nacl import encoding, public # 导入nacl库的encoding和public模块，用于加密
 
 # 获取环境变量中的应用编号，默认为'1'
