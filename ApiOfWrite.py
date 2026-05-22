@@ -1,272 +1,201 @@
-# -*- coding: UTF-8 -*-4
+# -*- coding: UTF-8 -*-
+"""
+E5 开发者写入模式 - 更自然的 Microsoft 365 写入操作
+模拟开发者在日常工作中正常使用：发邮件、存文件、记笔记等
+"""
 import os
-import xlsxwriter
 import requests as req
-import json,sys,time,random
+import json, time, random
 
-#reload(sys)
-#sys.setdefaultencoding('utf-8')
-emailaddress=os.getenv('EMAIL')  # 获取环境变量中的邮箱地址
-app_num=os.getenv('APP_NUM') # 获取环境变量中的应用数量
-###########################
-# config选项说明
-# 0：关闭  ， 1：开启 jianyixiugai1
-# allstart：是否全api开启调用，关闭默认随机抽取调用。默认0关闭
-# rounds: 轮数，即每次启动跑几轮。
-# rounds_delay: 是否开启每轮之间的随机延时，后面两参数代表延时的区间。默认0关闭
-# api_delay: 是否开启api之间的延时，默认0关闭
-# app_delay: 是否开启账号之间的延时，默认0关闭
-########################################
-config = {
-         'allstart': 1,
-         'rounds': 1,
-         'rounds_delay': [1,0,5],
-         'api_delay': [1,0,5],
-         'app_delay': [0,0,5],
-         }        
-if app_num == '':
+# 环境变量
+emailaddress = os.getenv('EMAIL')
+app_num = os.getenv('APP_NUM')
+if app_num == '' or app_num is None:
     app_num = '1'
-city=os.getenv('CITY')
-if city == '':
-    city = 'Beijing'
-access_token_list=['linlinlinlin']*int(app_num)
 
-#微软refresh_token获取
-def getmstoken(ms_token,appnum):
-    headers={'Content-Type':'application/x-www-form-urlencoded'
-            }
-    data={'grant_type': 'refresh_token',
+city = os.getenv('CITY', 'Beijing')
+
+# 配置 - 更自然的间隔
+config = {
+    'allstart': 1,
+    'rounds': 1,
+    'rounds_delay': [1, 30, 120],
+    'api_delay': [1, 3, 10],
+    'app_delay': [1, 60, 180],
+}
+
+access_token_list = ['placeholder'] * int(app_num)
+
+def getmstoken(ms_token, appnum):
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    data = {
+        'grant_type': 'refresh_token',
         'refresh_token': ms_token,
-        'client_id':client_id,
-        'client_secret':client_secret,
-        'redirect_uri':'http://localhost:53682/'
-        }
-    html = req.post('https://login.microsoftonline.com/common/oauth2/v2.0/token',data=data,headers=headers)
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'redirect_uri': 'http://localhost:53682/'
+    }
+    html = req.post('https://login.microsoftonline.com/common/oauth2/v2.0/token',
+                    data=data, headers=headers)
     jsontxt = json.loads(html.text)
     if 'refresh_token' in jsontxt:
-        print(r'账号/应用 '+str(appnum)+' 的微软密钥获取成功')
+        print(f'✅ 账号 {appnum} 登录成功')
     else:
-        print(r'账号/应用 '+str(appnum)+' 的微软密钥获取失败\n'+'请检查secret里 CLIENT_ID , CLIENT_SECRET , MS_TOKEN 格式与内容是否正确，然后重新设置')
-    refresh_token = jsontxt['refresh_token']
-    access_token = jsontxt['access_token']
-    return access_token
+        print(f'❌ 账号 {appnum} 登录失败: {jsontxt.get("error", "未知错误")}')
+    return jsontxt.get('access_token')
 
-#api延时
 def apiDelay():
     if config['api_delay'][0] == 1:
-        time.sleep(random.randint(config['api_delay'][1],config['api_delay'][2]))
-        
-def apiReq(method,a,url,data='QAQ'):
+        time.sleep(random.randint(config['api_delay'][1], config['api_delay'][2]))
+
+def apiReq(method, a, url, data='QAQ'):
     apiDelay()
-    access_token=access_token_list[a-1]
-    headers={
-            'Authorization': 'bearer ' + access_token,
-            'Content-Type': 'application/json'
-            }
-    if method == 'post':
-        posttext=req.post(url,headers=headers,data=data)
-    elif method == 'put':
-        posttext=req.put(url,headers=headers,data=data)
-    elif method == 'delete':
-        posttext=req.delete(url,headers=headers)
-    else :
-        posttext=req.get(url,headers=headers)
-    if posttext.status_code < 300:
-        print('        操作成功')
-    else:
-        print('        操作失败')
-#    if posttext.status_code > 300:
-#        print('        操作失败')
-#        #成功不提示
-    return posttext.text
-          
-
-#上传文件到onedrive(小于4M)
-def UploadFile(a,filesname,f):
-    url=r'https://graph.microsoft.com/v1.0/me/drive/root:/AutoApi/App'+str(a)+r'/'+filesname+r':/content'
-    apiReq('put',a,url,f)
-    
-        
-# 发送邮件到自定义邮箱
-def SendEmail(a,subject,content):
-    url=r'https://graph.microsoft.com/v1.0/me/sendMail'
-    mailmessage={'message': {'subject': subject,
-                             'body': {'contentType': 'Text', 'content': content},
-                             'toRecipients': [{'emailAddress': {'address': emailaddress}}],
-                             },
-                 'saveToSentItems': 'true'}            
-    apiReq('post',a,url,json.dumps(mailmessage))	
-	
-#修改excel(这函数分离好像意义不大)
-#api-获取itemid: https://graph.microsoft.com/v1.0/me/drive/root/search(q='.xlsx')?select=name,id,webUrl
-def excelWrite(a,filesname,sheet):
-    url=r'https://graph.microsoft.com/v1.0/me/drive/root:/AutoApi/App'+str(a)+r'/'+filesname+r':/workbook/worksheets/add'
-    data={
-         "name": sheet
-         }
-    print('    添加工作表')
-    apiReq('post',a,url,json.dumps(data))
-    url=r'https://graph.microsoft.com/v1.0/me/drive/root:/AutoApi/App'+str(a)+r'/'+filesname+r':/workbook/worksheets/'+sheet+r'/tables/add'
-    data={
-         "address": "A1:D8",
-         "hasHeaders": False
-         }
-    print('    添加表格')
-    jsontxt=json.loads(apiReq('post',a,url,json.dumps(data)))
-    print('    添加行')
-    url=r'https://graph.microsoft.com/v1.0/me/drive/root:/AutoApi/App'+str(a)+r'/'+filesname+r':/workbook/tables/'+jsontxt['id']+r'/rows/add'
-    rowsvalues=[[0]*4]*2
-    for v1 in range(0,2):
-        for v2 in range(0,4):
-            rowsvalues[v1][v2]=random.randint(1,1200)
-    data={
-         "values": rowsvalues
-         }
-    apiReq('post',a,url,json.dumps(data))
-    
-def taskWrite(a,taskname):
-    url=r'https://graph.microsoft.com/v1.0/me/todo/lists'
-    data={
-         "displayName": taskname
-         }
-    print("    创建任务列表")
-    listjson=json.loads(apiReq('post',a,url,json.dumps(data)))
-    url=r'https://graph.microsoft.com/v1.0/me/todo/lists/'+listjson['id']+r'/tasks'
-    data={
-         "title": taskname,
-         }
-    print("    创建任务")
-    taskjson=json.loads(apiReq('post',a,url,json.dumps(data)))
-    url=r'https://graph.microsoft.com/v1.0/me/todo/lists/'+listjson['id']+r'/tasks/'+taskjson['id']
-    print("    删除任务")
-    apiReq('delete',a,url)
-    url=r'https://graph.microsoft.com/v1.0/me/todo/lists/'+listjson['id']
-    print("    删除任务列表")
-    apiReq('delete',a,url)    
-    
-def teamWrite(a,channelname):
-    url=r'https://graph.microsoft.com/v1.0/me/joinedTeams'
-    print("    获取team")
-    jsontxt = json.loads(apiReq('get',a,url))
-    objectlist=jsontxt['value']
-    #创建
-    print("    创建team频道")
-    data={
-         "displayName": channelname,
-         "description": "This channel is where we debate all future architecture plans",
-         "membershipType": "standard"
-         }
-    url=r'https://graph.microsoft.com/v1.0/teams/'+objectlist[0]['id']+r'/channels'
-    jsontxt = json.loads(apiReq('post',a,url,json.dumps(data)))
-    url=r'https://graph.microsoft.com/v1.0/teams/'+objectlist[0]['id']+r'/channels/'+jsontxt['id']
-    print("    删除team频道")
-    apiReq('delete',a,url)
-
-def onenoteWrite(a,notename):
-    url=r'https://graph.microsoft.com/v1.0/me/onenote/notebooks'
-    data={
-         "displayName": notename
-         }
-    print('    创建笔记本')
-    notetxt = json.loads(apiReq('post',a,url,json.dumps(data)))
-    print('    删除笔记本')
-    url=r'https://graph.microsoft.com/v1.0/me/drive/root:/Notebooks/'+notename
-    apiReq('delete',a,url)
-    
-#一次性获取access_token，降低获取率
-for a in range(1, int(app_num)+1):
-    client_id=os.getenv('CLIENT_ID_'+str(a))
-    client_secret=os.getenv('CLIENT_SECRET_'+str(a))
-    ms_token=os.getenv('MS_TOKEN_'+str(a))
-    access_token_list[a-1]=getmstoken(ms_token,a)
-print('')    
-#获取天气
-headers={'Accept-Language': 'zh-CN'}
-#weather=req.get(r'http://wttr.in/'+city+r'?format=4&?m',headers=headers).text
-import time
-import requests
-from urllib3.util import Retry
-from requests.adapters import HTTPAdapter
-
-def get_weather(city: str, session: requests.Session) -> str:
-    base = "https://wttr.in/"
-    # 正确的查询参数：format=4&m   （m=公制单位）
-    url = f"{base}{city}?format=4&m"
+    access_token = access_token_list[a-1]
+    headers = {
+        'Authorization': 'bearer ' + access_token,
+        'Content-Type': 'application/json'
+    }
     try:
-        resp = session.get(url, timeout=10)
-        resp.raise_for_status()
-        return resp.text.strip()
-    except requests.exceptions.RequestException as e:
-        # 优雅降级，别让脚本崩
-        return f"[天气获取失败] {city}: {e.__class__.__name__}"
+        if method == 'post':
+            posttext = req.post(url, headers=headers, data=data, timeout=15)
+        elif method == 'put':
+            posttext = req.put(url, headers=headers, data=data, timeout=15)
+        elif method == 'delete':
+            posttext = req.delete(url, headers=headers, timeout=15)
+        else:
+            posttext = req.get(url, headers=headers, timeout=15)
+        
+        if posttext.status_code < 300:
+            return posttext.text
+        else:
+            print(f'  ⚠️ 状态码: {posttext.status_code}')
+            return posttext.text
+    except Exception as e:
+        print(f'  ❌ 请求失败: {e}')
+        return None
 
-# —— 在主逻辑初始化一个带重试的 Session ——
-session = requests.Session()
-# 适当的 UA，避免被某些服务直接拒绝
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (compatible; E5-own/1.0; +https://github.com/)",
-    "Accept": "*/*",
-})
+# 自然的使用场景
+def developer_workflow(a):
+    """开发者日常工作流程"""
+    print(f"  📝 开始开发者工作流程...")
+    
+    # 1. 查看云盘（开发者经常看）
+    print("  📂 查看云盘...")
+    url = r'https://graph.microsoft.com/v1.0/me/drive/root'
+    apiReq('get', a, url)
+    
+    # 2. 查看最近文件
+    url = r'https://graph.microsoft.com/v1.0/me/drive/recent'
+    apiReq('get', a, url)
+    
+    # 3. 查看邮件（正常查看，不一定每封都回）
+    print("  📧 检查邮件...")
+    url = r'https://graph.microsoft.com/v1.0/me/messages?$top=5'
+    apiReq('get', a, url)
+    
+    # 4. 查看日历（看看今天有啥安排）
+    print("  📅 查看日历...")
+    url = r'https://graph.microsoft.com/v1.0/me/calendar/events?$top=3'
+    apiReq('get', a, url)
+    
+    # 5. 查看任务（工作待办）
+    print("  ✅ 查看任务列表...")
+    url = r'https://graph.microsoft.com/v1.0/me/todo/lists'
+    apiReq('get', a, url)
 
-retry = Retry(
-    total=5,                # 总重试次数
-    connect=5,              # 连接错误重试
-    read=5,                 # 读错误重试
-    backoff_factor=0.8,     # 指数回退：0.8, 1.6, 3.2, ...
-    status_forcelist=(429, 500, 502, 503, 504),
-    allowed_methods=("HEAD","GET","OPTIONS"),
-    raise_on_status=False,
-)
-adapter = HTTPAdapter(max_retries=retry)
-session.mount("https://", adapter)
-session.mount("http://", adapter)
+def send_weather_email(a):
+    """发送天气邮件 - 开发者检查天气很常见"""
+    if not emailaddress:
+        return
+    print(f"  📤 发送天气邮件到 {emailaddress}...")
+    url = r'https://graph.microsoft.com/v1.0/me/sendMail'
+    
+    weather_data = get_weather()
+    mailmessage = {
+        'message': {
+            'subject': f'天气提醒 - {time.strftime("%Y-%m-%d")}',
+            'body': {'contentType': 'Text', 'content': weather_data},
+            'toRecipients': [{'emailAddress': {'address': emailaddress}}],
+        },
+        'saveToSentItems': 'true'
+    }
+    apiReq('post', a, url, json.dumps(mailmessage))
 
-# 如需对远端温柔点，可在多城市轮询时做轻微 sleep
-# time.sleep(0.5)
+def create_onenote_note(a):
+    """创建 OneNote 笔记 - 开发者记录东西很正常"""
+    print("  📓 创建工作笔记...")
+    note_name = f'DevNotes_{random.randint(1000, 9999)}'
+    url = r'https://graph.microsoft.com/v1.0/me/onenote/notebooks'
+    data = json.dumps({"displayName": note_name})
+    result = apiReq('post', a, url, data)
+    
+    if result and 'id' in json.loads(result):
+        print(f"    ✅ 笔记 {note_name} 创建成功")
+        # 不需要删除，自然使用就是要留痕迹
 
-# —— 调用获取天气 ——
-weather = get_weather(city, session)
+def update_presence(a):
+    """更新在线状态 - 开发者经常设置"""
+    print("  🟢 更新在线状态...")
+    url = r'https://graph.microsoft.com/v1.0/me/presence/setPresence'
+    data = json.dumps({
+        "availability": random.choice(["Available", "Busy", "DoNotDisturb"]),
+        "activity": random.choice(["InACall", "InAMeeting", "Presenting"])
+    })
+    apiReq('post', a, url, data)
 
-#实际运行
+def get_weather():
+    """获取天气"""
+    try:
+        import requests
+        resp = requests.get(f'https://wttr.in/{city}?format=4&m', timeout=5)
+        if resp.status_code == 200:
+            return resp.text.strip()
+    except:
+        pass
+    return f"天气: {city} - 获取失败"
+
+# 初始化
 for a in range(1, int(app_num)+1):
-    print('账号 '+str(a))
-    print('发送邮件 ( 邮箱单独运行，每次运行只发送一次，防止封号 )')
-    if emailaddress != '':
-        SendEmail(a,'weather',weather)
-        print('')
-#其他api
-for _ in range(1,config['rounds']+1):
+    client_id = os.getenv(f'CLIENT_ID_{a}')
+    client_secret = os.getenv(f'CLIENT_SECRET_{a}')
+    ms_token = os.getenv(f'MS_TOKEN_{a}')
+    if client_id and ms_token:
+        access_token_list[a-1] = getmstoken(ms_token, a)
+
+print(f"\n🚀 E5 开发者写入模式")
+print(f"📊 共 {app_num} 个账号\n")
+
+# 主循环
+for r in range(1, config['rounds']+1):
     if config['rounds_delay'][0] == 1:
-        time.sleep(random.randint(config['rounds_delay'][1],config['rounds_delay'][2]))     
-    print('第 '+str(_)+' 轮\n')        
+        delay = random.randint(config['rounds_delay'][1], config['rounds_delay'][2])
+        print(f"⏳ 等待 {delay} 秒...")
+        time.sleep(delay)
+    
+    print(f'\n📋 第 {r} 轮\n')
+    
     for a in range(1, int(app_num)+1):
         if config['app_delay'][0] == 1:
-            time.sleep(random.randint(config['app_delay'][1],config['app_delay'][2]))        
-        print('账号 '+str(a))    
-        #生成随机名称
-        filesname='QAQ'+str(random.randint(1,600))+r'.xlsx'
-        #新建随机xlsx文件
-        xls = xlsxwriter.Workbook(filesname)
-        xlssheet = xls.add_worksheet()
-        for s1 in range(0,4):
-            for s2 in range(0,4):
-                xlssheet.write(s1,s2,str(random.randint(1,600)))
-        xls.close()
-        xlspath=sys.path[0]+r'/'+filesname
-        print('上传文件 ( 可能会偶尔出现创建上传失败的情况 ) ')
-        with open(xlspath,'rb') as f:
-            UploadFile(a,filesname,f)
-        choosenum = random.sample(range(1, 5),2)
-        if config['allstart'] == 1 or 1 in choosenum:
-            print('excel文件操作')
-            excelWrite(a,filesname,'QVQ'+str(random.randint(1,600)))
-        if config['allstart'] == 1 or 2 in choosenum:
-            print('team操作')
-            teamWrite(a,'QVQ'+str(random.randint(1,600)))
-        if config['allstart'] == 1 or 3 in choosenum:
-            print('task操作')
-            taskWrite(a,'QVQ'+str(random.randint(1,600)))
-        if config['allstart'] == 1 or 4 in choosenum:
-            print('onenote操作')
-            onenoteWrite(a,'QVQ'+str(random.randint(1,600)))
-        print('-')
+            time.sleep(random.randint(config['app_delay'][1], config['app_delay'][2]))
+        
+        print(f'\n👤 账号 {a}:')
+        
+        # 开发者日常操作 - 随机选择几个
+        actions = [
+            lambda: developer_workflow(a),
+            lambda: send_weather_email(a),
+            lambda: create_onenote_note(a),
+            lambda: update_presence(a),
+        ]
+        
+        # 随机执行2-3个操作，更像真人
+        num_actions = random.randint(2, 3)
+        selected = random.sample(actions, num_actions)
+        
+        for action in selected:
+            try:
+                action()
+            except Exception as e:
+                print(f"  ❌ 操作失败: {e}")
+
+print(f"\n✨ 开发者工作完成！")
