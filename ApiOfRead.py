@@ -15,10 +15,10 @@ if app_num == '' or app_num is None:
 # 配置
 config = {
     'api_rand': 1,
-    'rounds': 3,
-    'rounds_delay': [1, 60, 180],  # 每轮间隔更长，更自然
-    'api_delay': [1, 2, 8],        # API之间随机延时
-    'app_delay': [1, 30, 90],      # 账号之间延时
+    'rounds': 1,  # 减少测试轮数
+    'rounds_delay': [0, 1, 3],  # 减少等待
+    'api_delay': [0, 0, 1],     # 减少API间隔
+    'app_delay': [0, 0, 1],     # 减少账号间隔
 }
 
 # 开发者的日常操作 - 更自然
